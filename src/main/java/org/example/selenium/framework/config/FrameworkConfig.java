@@ -1,7 +1,5 @@
 package org.example.selenium.framework.config;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.io.InputStream;
 import java.util.Collections;
@@ -11,8 +9,6 @@ import java.util.Properties;
 
 public enum FrameworkConfig {
     INSTANCE;
-
-    private static final Logger log = LoggerFactory.getLogger(FrameworkConfig.class.getName());
 
     private final Map<String, String> configuration;
 
@@ -26,7 +22,7 @@ public enum FrameworkConfig {
     private static final String DEFAULT_VIEWPORT = "desktop.medium";
     //    todo: ADD remaining later
 
-    private static final String PROPERTIES_FILE = "framework.properties";
+    private static final String PROPERTIES_FILE = "/framework.properties";
     private static final String ENV_PREFIX = "FWK_";
 
     FrameworkConfig() {
@@ -53,7 +49,7 @@ public enum FrameworkConfig {
     private void loadFileConfig(Map<String, String> props) {
         try (InputStream input = FrameworkConfig.class.getResourceAsStream(PROPERTIES_FILE)) {
             if (input == null) {
-                log.warn("No properties file found: " + PROPERTIES_FILE);
+//                log.warn("No properties file found: " + PROPERTIES_FILE);
                 return;
             }
             Properties fileProps = new Properties();
