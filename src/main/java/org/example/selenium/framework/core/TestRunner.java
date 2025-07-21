@@ -34,12 +34,10 @@ public class TestRunner {
         List<Future<TestResult>> allFutures = new ArrayList<>();
 
 
-        // Execute parallel tests using Virtual Threads
         if (!parallelTests.isEmpty()) {
             allFutures.addAll(executeParallelTests());
         }
 
-        // Execute single-threaded tests sequentially
         if (!singleThreadedTests.isEmpty()) {
             allFutures.addAll(executeSingleThreadedTests());
         }
@@ -92,11 +90,9 @@ public class TestRunner {
                         try {
                             Object testInstance = method.getDeclaringClass().getDeclaredConstructor().newInstance();
                             method.invoke(testInstance);
-                            long endTestExecution = System.currentTimeMillis();
-                            return new TestResult(method, TestStatus.PASSED, endTestExecution - startTestExecution, null);
+                            return new TestResult(method, TestStatus.PASSED, System.currentTimeMillis() - startTestExecution, null);
                         } catch (Throwable e) {
-                            long endTestExecution = System.currentTimeMillis();
-                            return new TestResult(method, TestStatus.FAILED, endTestExecution - startTestExecution, e);
+                            return new TestResult(method, TestStatus.FAILED, System.currentTimeMillis() - startTestExecution, e);
                         }
                     } finally {
                         BrowserManager.quit();
