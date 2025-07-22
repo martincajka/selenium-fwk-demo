@@ -2,9 +2,9 @@ package org.example.selenium.framework.core;
 
 import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ScanResult;
-import org.example.selenium.framework.browser.BrowserFactory;
 import org.example.selenium.framework.browser.BrowserManager;
 import org.example.selenium.framework.config.FrameworkConfig;
+import org.example.selenium.framework.logging.LoggingManager;
 import org.example.selenium.framework.results.TestResult;
 import org.example.selenium.framework.results.TestStatus;
 import org.slf4j.Logger;
@@ -16,9 +16,13 @@ import java.util.List;
 import java.util.concurrent.*;
 
 public class TestRunner {
+    static {
+        LoggingManager.initialize();
+    }
+
     private static final Logger log = LoggerFactory.getLogger(TestRunner.class);
     private static final String TARGET_PACKAGE = "org.example.selenium.framework.tests";
-    private static final int MAX_CONCURRENT_SESSIONS = FrameworkConfig.INSTANCE.getConfigAsInt("execution.threadCount", 2);
+    private static final int MAX_CONCURRENT_SESSIONS = FrameworkConfig.INSTANCE.getConfigAsInt("execution.threadCount", Runtime.getRuntime().availableProcessors() / 2);
     private final Semaphore browserSessionLimiter = new Semaphore(MAX_CONCURRENT_SESSIONS);
     private final List<Method> parallelTests = new ArrayList<>();
     private final List<Method> singleThreadedTests = new ArrayList<>();
@@ -30,9 +34,8 @@ public class TestRunner {
     }
 
     private void executeTests() {
-        log.info("Stating test execution...");
+        log.info("Starting test execution...");
         List<Future<TestResult>> allFutures = new ArrayList<>();
-
 
         if (!parallelTests.isEmpty()) {
             allFutures.addAll(executeParallelTests());
@@ -48,8 +51,7 @@ public class TestRunner {
     }
 
     private List<Future<TestResult>> executeSingleThreadedTests() {
-        log.info("Executing {} single-threaded tests...", singleThreadedTests.size());
-        // Use a single-thread executor to run these tests one by one.
+        log.debug("Executing {} single-threaded tests...", singleThreadedTests.size());
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             List<Callable<TestResult>> tasks = createTasksFor(singleThreadedTests);
             return executor.invokeAll(tasks);
@@ -61,8 +63,7 @@ public class TestRunner {
     }
 
     private List<Future<TestResult>> executeParallelTests() {
-        log.info("Executing {} parallel tests with Virtual Threads...", parallelTests.size());
-        // Use a virtual-thread-per-task executor for maximum concurrency.
+        log.debug("Executing {} parallel tests...", parallelTests.size());
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
             List<Callable<TestResult>> tasks = createTasksFor(parallelTests);
             // invokeAll blocks until all submitted tasks are complete.
@@ -77,11 +78,14 @@ public class TestRunner {
     private List<Callable<TestResult>> createTasksFor(List<Method> methods) {
         return methods.stream()
                 .<Callable<TestResult>>map(method -> () -> {
-                    log.info("Waiting for permit to run test: {}.{}()",
+                    log.debug("Waiting for permit to run test: {}.{}()",
                             method.getDeclaringClass().getSimpleName(),
                             method.getName());
                     browserSessionLimiter.acquire();
                     try {
+                        if (method.isAnnotationPresent(Ignore.class)){
+                            return new TestResult(method, TestStatus.IGNORED, 0, null);
+                        }
                         log.info("🔄 Starting test: {}.{}() on thread {}",
                                 method.getDeclaringClass().getSimpleName(),
                                 method.getName(),
@@ -97,7 +101,7 @@ public class TestRunner {
                     } finally {
                         BrowserManager.quit();
                         browserSessionLimiter.release();
-                        log.info("Permit released for test: {}.{}()",
+                        log.debug("Permit released for test: {}.{}()",
                                 method.getDeclaringClass().getSimpleName(),
                                 method.getName());
                     }
@@ -108,24 +112,31 @@ public class TestRunner {
     private void processResults(List<Future<TestResult>> futures) {
         int success = 0;
         int failed = 0;
+        int skipped = 0;
 
         for (Future<TestResult> future : futures) {
             try {
-                // .get() is instant here because invokeAll already waited.
                 TestResult result = future.get();
-                if (result.status() == TestStatus.PASSED) {
-                    success++;
-                    log.info("✅ PASSED: {}", result.getTestName());
-                } else {
-                    failed++;
-                    log.error("❌ FAILED: {} - Reason: {}", result.getTestName(), result.error().getMessage(), result.error());
+                switch (result.status()){
+                    case PASSED -> {
+                        success++;
+                        log.info("✅ PASSED: {}", result.getTestName());
+                    }
+                    case FAILED -> {
+                        failed++;
+                        log.error("❌ FAILED: {} - Reason: {}", result.getTestName(), result.error().getMessage(), result.error());
+                    }
+                    case IGNORED -> {
+                        skipped++;
+                        log.info("⏭️ SKIPPED: {}", result.getTestName());
+                    }
                 }
             } catch (Exception e) {
                 failed++;
                 log.error("❌ A test task failed to execute correctly.", e);
             }
         }
-        log.info("--- Summary --- Passed: {}, Failed: {}", success, failed);
+        log.info("--- Summary --- Passed: {}, Failed: {}, Skipped: {}", success, failed, skipped);
     }
 
     private void scanForTests() {
