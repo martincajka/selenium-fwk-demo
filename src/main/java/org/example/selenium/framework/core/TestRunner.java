@@ -2,11 +2,12 @@ package org.example.selenium.framework.core;
 
 import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ScanResult;
-import org.example.selenium.framework.browser.BrowserManager;
+import org.example.selenium.framework.browser.BrowserFactory;
 import org.example.selenium.framework.config.FrameworkConfig;
 import org.example.selenium.framework.logging.LoggingManager;
 import org.example.selenium.framework.results.TestResult;
 import org.example.selenium.framework.results.TestStatus;
+import org.openqa.selenium.WebDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -53,7 +54,7 @@ public class TestRunner {
     private List<Future<TestResult>> executeSingleThreadedTests() {
         log.debug("Executing {} single-threaded tests...", singleThreadedTests.size());
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-            List<Callable<TestResult>> tasks = createTasksFor(singleThreadedTests);
+            List<Callable<TestResult>> tasks = createTasksFor(singleThreadedTests, false);
             return executor.invokeAll(tasks);
         } catch (InterruptedException e) {
             log.error("Single-threaded test execution was interrupted", e);
@@ -65,8 +66,7 @@ public class TestRunner {
     private List<Future<TestResult>> executeParallelTests() {
         log.debug("Executing {} parallel tests...", parallelTests.size());
         try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
-            List<Callable<TestResult>> tasks = createTasksFor(parallelTests);
-            // invokeAll blocks until all submitted tasks are complete.
+            List<Callable<TestResult>> tasks = createTasksFor(parallelTests, true);
             return executor.invokeAll(tasks);
         } catch (InterruptedException e) {
             log.error("Parallel test execution was interrupted", e);
@@ -75,32 +75,39 @@ public class TestRunner {
         }
     }
 
-    private List<Callable<TestResult>> createTasksFor(List<Method> methods) {
+    private List<Callable<TestResult>> createTasksFor(List<Method> methods, boolean useSemaphore) {
         return methods.stream()
                 .<Callable<TestResult>>map(method -> () -> {
-                    log.debug("Waiting for permit to run test: {}.{}()",
-                            method.getDeclaringClass().getSimpleName(),
-                            method.getName());
-                    browserSessionLimiter.acquire();
+                    if (useSemaphore) {
+                        log.debug("Waiting for permit to run test: {}.{}()",
+                                method.getDeclaringClass().getSimpleName(),
+                                method.getName());
+                        browserSessionLimiter.acquire();
+                    }
+                    WebDriver driver = null;
+                    long startTestExecution = System.currentTimeMillis();
+
                     try {
-                        if (method.isAnnotationPresent(Ignore.class)){
+                        if (method.isAnnotationPresent(Ignore.class)) {
                             return new TestResult(method, TestStatus.IGNORED, 0, null);
                         }
                         log.info("🔄 Starting test: {}.{}() on thread {}",
                                 method.getDeclaringClass().getSimpleName(),
                                 method.getName(),
                                 Thread.currentThread().threadId());
-                        long startTestExecution = System.currentTimeMillis();
-                        try {
-                            Object testInstance = method.getDeclaringClass().getDeclaredConstructor().newInstance();
-                            method.invoke(testInstance);
-                            return new TestResult(method, TestStatus.PASSED, System.currentTimeMillis() - startTestExecution, null);
-                        } catch (Throwable e) {
-                            return new TestResult(method, TestStatus.FAILED, System.currentTimeMillis() - startTestExecution, e);
-                        }
+                        driver = BrowserFactory.createDriver();
+                        Object testInstance = method.getDeclaringClass().getDeclaredConstructor().newInstance();
+                        method.invoke(testInstance, driver);
+                        return new TestResult(method, TestStatus.PASSED, System.currentTimeMillis() - startTestExecution, null);
+                    } catch (Throwable e) {
+                        return new TestResult(method, TestStatus.FAILED, System.currentTimeMillis() - startTestExecution, e);
                     } finally {
-                        BrowserManager.quit();
-                        browserSessionLimiter.release();
+                        if (driver != null) {
+                            driver.quit();
+                        }
+                        if (useSemaphore) {
+                            browserSessionLimiter.release();
+                        }
                         log.debug("Permit released for test: {}.{}()",
                                 method.getDeclaringClass().getSimpleName(),
                                 method.getName());
@@ -117,7 +124,7 @@ public class TestRunner {
         for (Future<TestResult> future : futures) {
             try {
                 TestResult result = future.get();
-                switch (result.status()){
+                switch (result.status()) {
                     case PASSED -> {
                         success++;
                         log.info("✅ PASSED: {}", result.getTestName());
@@ -141,11 +148,11 @@ public class TestRunner {
 
     private void scanForTests() {
         log.info("Scanning for tests in package: " + TARGET_PACKAGE + "...");
-        // Use a try-with-resources block to ensure the scanner is closed
+
         try (ScanResult scanResult = new ClassGraph()
-                .enableAllInfo() // Enables method, field, and annotation info
-                .acceptPackages(TARGET_PACKAGE) // Specifies the package to scan
-                .scan()) { // Executes the scan
+                .enableAllInfo()
+                .acceptPackages(TARGET_PACKAGE)
+                .scan()) {
 
             // Find all classes that have a method annotated with @Test
             for (var classInfo : scanResult.getClassesWithMethodAnnotation(Test.class.getName())) {

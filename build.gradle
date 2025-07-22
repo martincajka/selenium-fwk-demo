@@ -16,7 +16,7 @@ repositories {
 
 dependencies {
     // Selenium WebDriver with built-in WebDriver Manager (Rust CLI tool)
-    implementation 'org.seleniumhq.selenium:selenium-java:4.16.1'
+    implementation 'org.seleniumhq.selenium:selenium-java:4.34.0'
     
     // Logging
     implementation 'org.slf4j:slf4j-api:2.0.9'
