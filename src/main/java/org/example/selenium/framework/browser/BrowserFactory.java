@@ -3,25 +3,17 @@ package org.example.selenium.framework.browser;
 import org.example.selenium.framework.config.FrameworkConfig;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
-import org.openqa.selenium.chrome.ChromeDriverService;
 import org.openqa.selenium.chrome.ChromeOptions;
 import org.openqa.selenium.edge.EdgeDriver;
 import org.openqa.selenium.edge.EdgeOptions;
 import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.firefox.FirefoxOptions;
-import org.openqa.selenium.firefox.GeckoDriverService;
-import org.openqa.selenium.manager.SeleniumManager;
 import org.openqa.selenium.remote.CapabilityType;
-import org.openqa.selenium.remote.http.ClientConfig;
-import org.openqa.selenium.remote.service.DriverService;
 import org.openqa.selenium.safari.SafariDriver;
-import org.openqa.selenium.safari.SafariDriverService;
 import org.openqa.selenium.safari.SafariOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.swing.*;
-import java.io.IOException;
 import java.time.Duration;
 
 public class BrowserFactory {
@@ -39,6 +31,7 @@ public class BrowserFactory {
         String browserVersion = FrameworkConfig.INSTANCE.getConfig("browser.version", "latest");
         boolean headless = FrameworkConfig.INSTANCE.getConfigAsBoolean("browser.headless");
         String viewport = FrameworkConfig.INSTANCE.getConfig("viewport", "desktop.medium");
+        int timeout = FrameworkConfig.INSTANCE.getConfigAsInt("browser.timeout", 30);
         MutableCapabilities commonCapabilities = new MutableCapabilities();
         commonCapabilities.setCapability(CapabilityType.BROWSER_VERSION, browserVersion);
 
@@ -46,23 +39,18 @@ public class BrowserFactory {
                 browserName, browserVersion, headless, viewport);
 
         // Create the WebDriver instance based on browser type
-        WebDriver driver;
-        switch (browserName.toLowerCase()) {
-            case "chrome":
-                driver = createChromeDriver(headless, commonCapabilities);
-                break;
-            case "firefox":
-                driver = createFirefoxDriver(headless, commonCapabilities);
-                break;
-            case "edge":
-                driver = createEdgeDriver(headless, commonCapabilities);
-                break;
-            case "safari":
-                driver = createSafariDriver(commonCapabilities);
-                break;
-            default:
-                throw new IllegalArgumentException("Unsupported browser specified: " + browserName);
-        }
+        WebDriver driver = switch (browserName.toLowerCase()) {
+            case "chrome" -> createChromeDriver(headless, commonCapabilities);
+            case "firefox" -> createFirefoxDriver(headless, commonCapabilities);
+            case "edge" -> createEdgeDriver(headless, commonCapabilities);
+            case "safari" -> createSafariDriver(commonCapabilities);
+            default -> throw new IllegalArgumentException("Unsupported browser specified: " + browserName);
+        };
+
+        // Set timeouts
+        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(timeout));
+        driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(timeout));
+        driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(timeout));
 
         // to open browser in top-left corner of the screen
         driver.manage().window().setPosition(new Point(0, 0));
@@ -77,7 +65,7 @@ public class BrowserFactory {
 
     /**
      * Creates a Chrome WebDriver with specified options.
-     * Supprted versions include "STABLE", "BETA", "DEV", "NIGHTLY" and versions form 115.
+     * Supported versions include "STABLE", "BETA", "DEV", "NIGHTLY" and versions form 115.
      */
     private static WebDriver createChromeDriver(boolean headless, MutableCapabilities commonCapabilities) {
         ChromeOptions options = new ChromeOptions();
