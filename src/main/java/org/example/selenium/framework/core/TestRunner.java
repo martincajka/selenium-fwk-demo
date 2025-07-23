@@ -89,12 +89,11 @@ public class TestRunner {
 
                     try {
                         if (method.isAnnotationPresent(Ignore.class)) {
-                            return new TestResult(method, TestStatus.IGNORED, 0, null);
+                            return new TestResult(method, TestStatus.SKIPPED, 0, null);
                         }
-                        log.info("🔄 Starting test: {}.{}() on thread {}",
+                        log.info("🔄 Starting test: {}.{}()",
                                 method.getDeclaringClass().getSimpleName(),
-                                method.getName(),
-                                Thread.currentThread().threadId());
+                                method.getName());
                         driver = BrowserFactory.createDriver();
                         Object testInstance = method.getDeclaringClass().getDeclaredConstructor().newInstance();
                         method.invoke(testInstance, driver);
@@ -133,7 +132,7 @@ public class TestRunner {
                         failed++;
                         log.error("❌ FAILED: {} - Reason: {}", result.getTestName(), result.error().getMessage(), result.error());
                     }
-                    case IGNORED -> {
+                    case SKIPPED -> {
                         skipped++;
                         log.info("⏭️ SKIPPED: {}", result.getTestName());
                     }
