@@ -1,6 +1,7 @@
 package org.example.selenium.framework.browser;
 
 import org.example.selenium.framework.config.FrameworkConfig;
+import org.openqa.selenium.Dimension;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeDriverService;
@@ -34,22 +35,36 @@ public class BrowserFactory {
     public static WebDriver createDriver() {
         String browserName = FrameworkConfig.INSTANCE.getConfig("browser", "chrome");
         boolean headless = FrameworkConfig.INSTANCE.getConfigAsBoolean("browser.headless");
+        String viewport = FrameworkConfig.INSTANCE.getConfig("viewport", "desktop.medium");
 
-        log.debug("Creating a new '{}' WebDriver instance. Headless: {}",
-                browserName, headless);
+        log.debug("Creating a new '{}' WebDriver instance. Headless: {}, Viewport: {}",
+                browserName, headless, viewport);
 
+        // Create the WebDriver instance based on browser type
+        WebDriver driver;
         switch (browserName.toLowerCase()) {
             case "chrome":
-                return createChromeDriver(headless);
+                driver = createChromeDriver(headless);
+                break;
             case "firefox":
-                return createFirefoxDriver(headless);
+                driver = createFirefoxDriver(headless);
+                break;
             case "edge":
-                return createEdgeDriver(headless);
+                driver = createEdgeDriver(headless);
+                break;
             case "safari":
-                return createSafariDriver();
+                driver = createSafariDriver();
+                break;
             default:
                 throw new IllegalArgumentException("Unsupported browser specified: " + browserName);
         }
+        
+        // Set the viewport size
+        Dimension viewportSize = getViewportSize(viewport);
+        driver.manage().window().setSize(viewportSize);
+        log.debug("Set viewport size to: {}x{}", viewportSize.getWidth(), viewportSize.getHeight());
+        
+        return driver;
     }
     
     /**
@@ -107,6 +122,52 @@ public class BrowserFactory {
         SafariOptions options = new SafariOptions();
         
         return new SafariDriver(options);
+    }
+
+    /**
+     * Returns a Dimension object representing the viewport size based on the provided viewport name.
+     * Supports predefined viewport sizes and custom dimensions.
+     *
+     * @param viewport The viewport name or custom dimensions
+     * @return Dimension object with the specified width and height
+     */
+    public static Dimension getViewportSize(String viewport) {
+        // Check if custom viewport dimensions are provided in config
+        String customWidth = FrameworkConfig.INSTANCE.getConfig("viewport.width");
+        String customHeight = FrameworkConfig.INSTANCE.getConfig("viewport.height");
+        
+        if (customWidth != null && customHeight != null) {
+            try {
+                int width = Integer.parseInt(customWidth);
+                int height = Integer.parseInt(customHeight);
+                return new Dimension(width, height);
+            } catch (NumberFormatException e) {
+                log.warn("Invalid custom viewport dimensions. Using predefined viewport instead.");
+            }
+        }
+        
+        return switch (viewport.toLowerCase()) {
+            // Mobile viewports
+            case "mobile.small" -> new Dimension(375, 667);    // iPhone 8
+            case "mobile.medium" -> new Dimension(390, 844);   // iPhone 12/13
+            case "mobile.large" -> new Dimension(428, 926);    // iPhone 13 Pro Max
+            
+            // Tablet viewports
+            case "tablet.small" -> new Dimension(768, 1024);   // iPad Mini
+            case "tablet.medium" -> new Dimension(834, 1112);  // iPad Air
+            case "tablet.large" -> new Dimension(1024, 1366);  // iPad Pro
+            
+            // Desktop viewports
+            case "desktop.small" -> new Dimension(1024, 768);  // Small laptop
+            case "desktop.medium" -> new Dimension(1280, 800); // Medium laptop
+            case "desktop.large" -> new Dimension(1920, 1080); // Large desktop
+            
+            // Default size
+            default -> {
+                log.warn("Unknown viewport: {}. Using desktop.medium as default.", viewport);
+                yield new Dimension(1280, 800);
+            }
+        };
     }
 
 //    todo add driver download using webdriver manager
