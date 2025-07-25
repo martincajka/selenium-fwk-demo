@@ -1,17 +1,24 @@
 # Selenium Enterprise Framework
 
-An enterprise-level Selenium framework for testing web applications. This framework is designed as an MVP (Minimum Viable Product) that showcases advanced testing capabilities while maintaining a clean, maintainable architecture.
+A lightweight, extensible Selenium framework for automated web testing with advanced capabilities and a clean architecture.
 
-## Features
+## Current Features
 
-- **Browser Management**: Support for multiple browsers, versions, headless mode, and responsive testing
-- **Parallel Test Execution**: Custom implementation using Java 21 features
+- **Browser Management**: Support for Chrome, Firefox, Edge, and Safari with configurable options for headless mode and viewport sizes
+- **Parallel Test Execution**: Run tests concurrently using Java 21 features with configurable thread count
+- **Hamcrest Assertions**: Enhanced assertion capabilities with detailed error reporting and listener support
+- **Performance Monitoring**: Built-in timing service to track and report operation durations
+- **Configurable Logging**: Flexible logging options with different levels and output formats
+- **Test Annotations**: Custom annotations for test configuration (@Test, @Ignore, @SingleThreaded)
+
+## Planned Features
+
+- **Screenshot Capture**: Automatic screenshot capture on test failures
 - **Response Mocking**: Network interception and response modification
 - **Visual Testing**: Screenshot comparison and visual element detection
 - **Component-Based Architecture**: Reusable UI components with specialized interfaces
-- **Comprehensive Logging**: Configurable logging levels and formats
-- **Custom Reporting**: Detailed test execution metrics and multiple report formats
-- **Future Auto-Healing**: Planned support for element recovery and alternative locator strategies
+- **Enhanced Reporting**: Detailed test execution metrics with multiple report formats
+- **Auto-Healing**: Element recovery and alternative locator strategies
 
 ## Getting Started
 
@@ -32,184 +39,52 @@ An enterprise-level Selenium framework for testing web applications. This framew
 
 ### Configuration
 
-The framework can be configured using the `framework.properties` file in the `src/test/resources` directory. See the sample file for available options.
+Configure the framework using the `framework.properties` file in `src/test/resources`:
 
-## Usage Guidelines
+```properties
+# Browser Configuration
+browser=chrome
+browser.headless=false
 
-### Creating Tests
+# Test Execution Configuration
+execution.parallel=true
+execution.threadCount=4
+execution.timeout=10
 
-1. **Use Component-Based Approach**
+# Logging Configuration
+logging.level=INFO
+```
 
-   Instead of directly using WebElements, use the component classes:
+### Basic Usage
 
-   ```java
-   // Instead of this:
-   WebElement button = driver.findElement(By.id("submit-button"));
-   button.click();
-
-   // Do this:
-   Button submitButton = new Button(driver, By.id("submit-button"));
-   submitButton.click();
-   ```
-
-2. **Implement Page Objects**
-
-   Create page objects that use components:
-
-   ```java
-   public class LoginPage {
-       private final WebDriver driver;
-       private final Input usernameInput;
-       private final Input passwordInput;
-       private final Button loginButton;
-
-       public LoginPage(WebDriver driver) {
-           this.driver = driver;
-           this.usernameInput = new Input(driver, By.id("username"));
-           this.passwordInput = new Input(driver, By.id("password"));
-           this.loginButton = new Button(driver, By.id("login"));
-       }
-
-       public void login(String username, String password) {
-           usernameInput.type(username);
-           passwordInput.type(password);
-           loginButton.click();
-       }
-   }
-   ```
-
-3. **Use Annotations for Test Configuration**
-
-   Use annotations to configure tests:
-
-   ```java
-   @Test
-   @Sequential
-   @MockResponseDefinition(url = "/api/users", body = "{\"name\": \"John\", \"age\": 30}")
-   public void testUserProfile() {
-       // Test code
-   }
-   ```
-
-### Parallel Execution
-
-The framework supports parallel execution by default. To run tests sequentially, use the `@Sequential` annotation:
+Create a test class with methods annotated with `@Test`:
 
 ```java
-@Sequential
-public class SequentialTests {
-    // All tests in this class will run sequentially
-}
-
-// Or for a specific test
-@Test
-@Sequential
-public void testThatShouldRunSequentially() {
-    // This test will run sequentially
+public class LoginTest {
+    @Test
+    public void testSuccessfulLogin(WebDriver driver) {
+        driver.get("https://example.com/login");
+        driver.findElement(By.id("username")).sendKeys("admin");
+        driver.findElement(By.id("password")).sendKeys("password");
+        driver.findElement(By.id("login-button")).click();
+        
+        WebElement welcomeMessage = driver.findElement(By.id("welcome"));
+        assertThat(welcomeMessage.getText(), equalTo("Welcome, Admin!"));
+    }
+    
+    @Test
+    @SingleThreaded
+    public void testThatShouldRunSequentially(WebDriver driver) {
+        // This test will run in single-threaded mode
+    }
 }
 ```
 
-### Network Interception
+## Documentation
 
-To mock network responses:
-
-```java
-// Programmatically
-NetworkInterceptor interceptor = new NetworkInterceptor(driver);
-interceptor.addMockResponse(
-    new MockResponse("/api/users")
-        .withBody("{\"name\": \"John\", \"age\": 30}")
-);
-interceptor.start();
-
-// Or using annotations
-@Test
-@MockResponseDefinition(url = "/api/users", body = "{\"name\": \"John\", \"age\": 30}")
-public void testWithMockResponse() {
-    // Test code
-}
-```
-
-### Visual Testing
-
-To perform visual testing:
-
-```java
-VisualTester visualTester = new VisualTester(driver);
-
-// Set baseline image
-visualTester.setBaseline("login-page", "path/to/baseline/login-page.png");
-
-// Compare current state with baseline
-ComparisonResult result = visualTester.compareWithBaseline("login-page");
-assertTrue(result.isPassed());
-```
-
-### Reporting
-
-To generate reports:
-
-```java
-TestReport report = TestReport.getInstance();
-
-// Start a test suite
-TestSuite suite = report.startSuite("Login Tests", "Tests for login functionality");
-
-// Start a test
-TestCase testCase = report.startTest("Login Tests", "Valid Login", "Test valid login credentials");
-
-// Record actions
-TestAction action = new TestAction("Enter username");
-// Perform action
-action.end();
-report.recordAction("Login Tests", "Valid Login", action);
-
-// End test
-report.endTest("Login Tests", "Valid Login", TestStatus.PASSED, null);
-
-// End suite
-report.endSuite("Login Tests");
-
-// Finalize and generate reports
-report.finalizeReport();
-report.generateHtmlReport();
-report.generateJUnitXmlReport();
-```
-
-## Best Practices
-
-1. **Component Reuse**: Create a library of reusable components for common UI elements
-2. **Consistent Waiting Strategy**: Use the built-in waiting methods in components
-3. **Proper Logging**: Include meaningful log messages at appropriate levels
-4. **Clean Test Data**: Separate test data from test logic
-5. **Independent Tests**: Ensure tests can run independently and in any order
-6. **Meaningful Assertions**: Use descriptive assertion messages
-7. **Regular Visual Baseline Updates**: Update visual baselines when UI changes are expected
-
-## Implementation Roadmap
-
-### Phase 1: Core Framework (Current)
-- Basic browser management
-- Component architecture
-- Parallel execution
-- Simple reporting
-
-### Phase 2: Advanced Features
-- Enhanced network interception
-- Comprehensive visual testing
-- Detailed reporting with charts
-- Test data management
-
-### Phase 3: Auto-Healing and AI
-- Element recovery mechanisms
-- Learning from successful recoveries
-- AI-assisted test maintenance
-- Predictive test failure analysis
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
+Additional documentation:
+- [Hamcrest Assertions Guide](docs/hamcrest_assertions.md)
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License.
