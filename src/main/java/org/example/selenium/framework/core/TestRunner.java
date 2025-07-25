@@ -2,8 +2,11 @@ package org.example.selenium.framework.core;
 
 import io.github.classgraph.ClassGraph;
 import io.github.classgraph.ScanResult;
-import org.example.selenium.framework.browser.BrowserFactory;
+import org.example.selenium.framework.assertions.AssertionFactory;
+import org.example.selenium.framework.browser.WebdriverFactory;
 import org.example.selenium.framework.config.FrameworkConfig;
+import org.example.selenium.framework.listener.TestAction;
+import org.example.selenium.framework.listener.PerformanceWebDriverListener;
 import org.example.selenium.framework.logging.LoggingManager;
 import org.example.selenium.framework.results.TestResult;
 import org.example.selenium.framework.results.TestStatus;
@@ -11,6 +14,7 @@ import org.openqa.selenium.WebDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -84,23 +88,54 @@ public class TestRunner {
                                 method.getName());
                         browserSessionLimiter.acquire();
                     }
+                    WebdriverFactory.DriverAndListeners driverAndListener = null;
                     WebDriver driver = null;
                     long startTestExecution = System.currentTimeMillis();
 
                     try {
                         if (method.isAnnotationPresent(Ignore.class)) {
-                            return new TestResult(method, TestStatus.SKIPPED, 0, null);
+                            return new TestResult(method, TestStatus.SKIPPED, 0, null, List.of());
                         }
                         log.info("🔄 Starting test: {}.{}()",
                                 method.getDeclaringClass().getSimpleName(),
                                 method.getName());
-                        driver = BrowserFactory.createDriver();
+                        driverAndListener = WebdriverFactory.createDriver();
+                        driver = driverAndListener.driver;
+                        
+                        // Initialize HamcrestAssertions with the TimingService
+                        AssertionFactory.initHamcrestAssertions(driverAndListener.getTimingService());
+                        
                         Object testInstance = method.getDeclaringClass().getDeclaredConstructor().newInstance();
                         method.invoke(testInstance, driver);
-                        return new TestResult(method, TestStatus.PASSED, System.currentTimeMillis() - startTestExecution, null);
+                        return new TestResult(
+                                method,
+                                TestStatus.PASSED,
+                                System.currentTimeMillis() - startTestExecution,
+                                null,
+                                driverAndListener.getListener(PerformanceWebDriverListener.class).getTimings());
                     } catch (Throwable e) {
-                        return new TestResult(method, TestStatus.FAILED, System.currentTimeMillis() - startTestExecution, e);
+                        List<TestAction> timings = driverAndListener != null ? driverAndListener.getListener(PerformanceWebDriverListener.class).getTimings() : List.of();
+                        if (!timings.isEmpty()) {
+                            TestAction lastAction = timings.getLast();
+                            if (lastAction.success()) {
+                                if (e instanceof InvocationTargetException) {
+                                    if (((InvocationTargetException) e).getTargetException() instanceof AssertionError) {
+                                        // If the last action was successful but an assertion failed, we log it as a failure
+                                        timings.addLast(new TestAction("Assertion Failed",
+                                                lastAction.target(),
+                                                lastAction.startTimestamp(),
+                                                lastAction.endTimestamp(),
+                                                false,
+                                                ((InvocationTargetException) e).getTargetException().getMessage()));
+                                    }
+                                }
+                            }
+                        }
+                        return new TestResult(method, TestStatus.FAILED, System.currentTimeMillis() - startTestExecution, e, timings);
                     } finally {
+                        // Clean up HamcrestAssertions
+                        AssertionFactory.cleanupHamcrestAssertions();
+                        
                         if (driver != null) {
                             driver.quit();
                         }
@@ -127,10 +162,16 @@ public class TestRunner {
                     case PASSED -> {
                         success++;
                         log.info("✅ PASSED: {}", result.getTestName());
+                        if (!result.testActions().isEmpty()) {
+                            result.testActions().forEach(timing -> log.info(timing.toString()));
+                        }
                     }
                     case FAILED -> {
                         failed++;
-                        log.error("❌ FAILED: {} - Reason: {}", result.getTestName(), result.error().getMessage(), result.error());
+                        log.error("❌ FAILED: {} - Reason: {}", result.getTestName(), result.error().getCause().toString());
+                        if (!result.testActions().isEmpty()) {
+                            result.testActions().forEach(timing -> log.error(timing.toString()));
+                        }
                     }
                     case SKIPPED -> {
                         skipped++;
@@ -146,7 +187,7 @@ public class TestRunner {
     }
 
     private void scanForTests() {
-        log.info("Scanning for tests in package: " + TARGET_PACKAGE + "...");
+        log.debug("Scanning for tests in package: " + TARGET_PACKAGE + "...");
 
         try (ScanResult scanResult = new ClassGraph()
                 .enableAllInfo()
@@ -172,6 +213,6 @@ public class TestRunner {
                 }
             }
         }
-        log.info("Scanning for tests finished");
+        log.debug("Scanning for tests finished");
     }
 }

@@ -1,6 +1,10 @@
 package org.example.selenium.framework.browser;
 
 import org.example.selenium.framework.config.FrameworkConfig;
+import org.example.selenium.framework.listener.LoggingWebDriverListner;
+import org.example.selenium.framework.listener.PerformanceWebDriverListener;
+import org.example.selenium.framework.timing.DefaultTimingService;
+import org.example.selenium.framework.timing.TimingService;
 import org.openqa.selenium.*;
 import org.openqa.selenium.chrome.ChromeDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
@@ -11,14 +15,17 @@ import org.openqa.selenium.firefox.FirefoxOptions;
 import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.safari.SafariDriver;
 import org.openqa.selenium.safari.SafariOptions;
+import org.openqa.selenium.support.events.EventFiringDecorator;
+import org.openqa.selenium.support.events.WebDriverListener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
+import java.util.List;
 
-public class BrowserFactory {
+public class WebdriverFactory {
 
-    private static final Logger log = LoggerFactory.getLogger(BrowserFactory.class);
+    private static final Logger log = LoggerFactory.getLogger(WebdriverFactory.class);
 
     /**
      * Creates a WebDriver instance based on configuration settings.
@@ -26,12 +33,12 @@ public class BrowserFactory {
      *
      * @return Configured WebDriver instance
      */
-    public static WebDriver createDriver() {
+    public static DriverAndListeners createDriver() {
         String browserName = FrameworkConfig.INSTANCE.getConfig("browser", "chrome");
         String browserVersion = FrameworkConfig.INSTANCE.getConfig("browser.version", "latest");
         boolean headless = FrameworkConfig.INSTANCE.getConfigAsBoolean("browser.headless");
         String viewport = FrameworkConfig.INSTANCE.getConfig("viewport", "desktop.medium");
-        int timeout = FrameworkConfig.INSTANCE.getConfigAsInt("browser.timeout", 30);
+        int timeout = FrameworkConfig.INSTANCE.getConfigAsInt("execution.timeout", 30);
         MutableCapabilities commonCapabilities = new MutableCapabilities();
         commonCapabilities.setCapability(CapabilityType.BROWSER_VERSION, browserVersion);
 
@@ -39,7 +46,7 @@ public class BrowserFactory {
                 browserName, browserVersion, headless, viewport);
 
         // Create the WebDriver instance based on browser type
-        WebDriver driver = switch (browserName.toLowerCase()) {
+        WebDriver rawDriver = switch (browserName.toLowerCase()) {
             case "chrome" -> createChromeDriver(headless, commonCapabilities);
             case "firefox" -> createFirefoxDriver(headless, commonCapabilities);
             case "edge" -> createEdgeDriver(headless, commonCapabilities);
@@ -47,8 +54,16 @@ public class BrowserFactory {
             default -> throw new IllegalArgumentException("Unsupported browser specified: " + browserName);
         };
 
+        // Create shared timing service
+        TimingService timingService = new DefaultTimingService();
+        
+        // Create listeners with timing service
+        PerformanceWebDriverListener performanceWebDriverListener = new PerformanceWebDriverListener(timingService);
+        LoggingWebDriverListner loggingWebDriverListner = new LoggingWebDriverListner();
+        List<WebDriverListener> listeners = List.of(performanceWebDriverListener, loggingWebDriverListner);
+        WebDriver driver = new EventFiringDecorator<>(listeners.toArray(new WebDriverListener[0])).decorate(rawDriver);
+
         // Set timeouts
-        driver.manage().timeouts().implicitlyWait(Duration.ofSeconds(timeout));
         driver.manage().timeouts().pageLoadTimeout(Duration.ofSeconds(timeout));
         driver.manage().timeouts().scriptTimeout(Duration.ofSeconds(timeout));
 
@@ -60,7 +75,10 @@ public class BrowserFactory {
         driver.manage().window().setSize(viewportSize);
         log.debug("Set viewport size to: {}x{}", viewportSize.getWidth(), viewportSize.getHeight());
 
-        return driver;
+        // Create wrapper with timing service
+        WebdriverWrapper wrapper = new WebdriverWrapper(driver, Duration.ofSeconds(timeout), timingService);
+        
+        return new DriverAndListeners(wrapper, listeners, timingService);
     }
 
     /**
@@ -169,6 +187,36 @@ public class BrowserFactory {
                 yield new Dimension(1280, 800);
             }
         };
+    }
+
+    public static class DriverAndListeners {
+        public final WebDriver driver;
+        public final List<WebDriverListener> listeners;
+        private final TimingService timingService;
+
+        public DriverAndListeners(WebDriver driver, List<WebDriverListener> listeners, TimingService timingService) {
+            this.driver = driver;
+            this.listeners = listeners;
+            this.timingService = timingService;
+        }
+
+        public <T extends WebDriverListener> T getListener(Class<T> listenerClass) {
+            return listeners.stream()
+                    .filter(listenerClass::isInstance)
+                    .map(listenerClass::cast)
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Listener not found: " + listenerClass.getSimpleName()));
+        }
+        
+        /**
+         * Get the timing service used by this driver.
+         * This can be used to track assertion timing and results.
+         *
+         * @return The timing service
+         */
+        public TimingService getTimingService() {
+            return timingService;
+        }
     }
 
 //    todo add driver download using webdriver manager
