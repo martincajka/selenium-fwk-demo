@@ -101,10 +101,10 @@ public class TestRunner {
                                 method.getName());
                         driverAndListener = WebdriverFactory.createDriver();
                         driver = driverAndListener.driver;
-                        
+
                         // Initialize HamcrestAssertions with the TimingService
                         AssertionFactory.initHamcrestAssertions(driverAndListener.getTimingService());
-                        
+
                         Object testInstance = method.getDeclaringClass().getDeclaredConstructor().newInstance();
                         method.invoke(testInstance, driver);
                         return new TestResult(
@@ -118,24 +118,22 @@ public class TestRunner {
                         if (!timings.isEmpty()) {
                             TestAction lastAction = timings.getLast();
                             if (lastAction.success()) {
-                                if (e instanceof InvocationTargetException) {
-                                    if (((InvocationTargetException) e).getTargetException() instanceof AssertionError) {
-                                        // If the last action was successful but an assertion failed, we log it as a failure
-                                        timings.addLast(new TestAction("Assertion Failed",
-                                                lastAction.target(),
-                                                lastAction.startTimestamp(),
-                                                lastAction.endTimestamp(),
-                                                false,
-                                                ((InvocationTargetException) e).getTargetException().getMessage()));
-                                    }
-                                }
+                                timings.set(timings.size() - 1, new TestAction(
+                                        lastAction.action() + " (last action before failure)",
+                                        lastAction.target(),
+                                        lastAction.startTimestamp(),
+                                        lastAction.endTimestamp(),
+                                        false,
+                                        "Test failed with exception: " + e.getCause().toString()
+                                ));
+
                             }
                         }
                         return new TestResult(method, TestStatus.FAILED, System.currentTimeMillis() - startTestExecution, e, timings);
                     } finally {
                         // Clean up HamcrestAssertions
                         AssertionFactory.cleanupHamcrestAssertions();
-                        
+
                         if (driver != null) {
                             driver.quit();
                         }
