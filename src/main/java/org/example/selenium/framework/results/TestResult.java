@@ -5,7 +5,7 @@ import org.example.selenium.framework.listener.TestAction;
 import java.lang.reflect.Method;
 import java.util.List;
 
-public record TestResult(Method testMethod, TestStatus status, long durationMilis, Throwable error, List<TestAction> testActions) {
+public record TestResult(Method testMethod, TestStatus status, long testStartTimestamp, long testEndTimestamp, String error, List<TestAction> testActions) {
 
     public String getTestName() {
         return testMethod.getDeclaringClass().getSimpleName() + "." + testMethod.getName();

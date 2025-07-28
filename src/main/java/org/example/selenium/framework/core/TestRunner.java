@@ -8,13 +8,14 @@ import org.example.selenium.framework.config.FrameworkConfig;
 import org.example.selenium.framework.listener.TestAction;
 import org.example.selenium.framework.listener.PerformanceWebDriverListener;
 import org.example.selenium.framework.logging.LoggingManager;
+import org.example.selenium.framework.reports.ReportingService;
 import org.example.selenium.framework.results.TestResult;
+import org.example.selenium.framework.results.TestRun;
 import org.example.selenium.framework.results.TestStatus;
 import org.openqa.selenium.WebDriver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
@@ -94,7 +95,7 @@ public class TestRunner {
 
                     try {
                         if (method.isAnnotationPresent(Ignore.class)) {
-                            return new TestResult(method, TestStatus.SKIPPED, 0, null, List.of());
+                            return new TestResult(method, TestStatus.SKIPPED, System.currentTimeMillis(), System.currentTimeMillis(), null, List.of());
                         }
                         log.info("🔄 Starting test: {}.{}()",
                                 method.getDeclaringClass().getSimpleName(),
@@ -110,7 +111,8 @@ public class TestRunner {
                         return new TestResult(
                                 method,
                                 TestStatus.PASSED,
-                                System.currentTimeMillis() - startTestExecution,
+                                startTestExecution,
+                                System.currentTimeMillis(),
                                 null,
                                 driverAndListener.getListener(PerformanceWebDriverListener.class).getTimings());
                     } catch (Throwable e) {
@@ -129,7 +131,7 @@ public class TestRunner {
 
                             }
                         }
-                        return new TestResult(method, TestStatus.FAILED, System.currentTimeMillis() - startTestExecution, e, timings);
+                        return new TestResult(method, TestStatus.FAILED, startTestExecution, System.currentTimeMillis(), e.getCause().toString(), timings);
                     } finally {
                         // Clean up HamcrestAssertions
                         AssertionFactory.cleanupHamcrestAssertions();
@@ -153,9 +155,12 @@ public class TestRunner {
         int failed = 0;
         int skipped = 0;
 
+        List<TestResult> results = new ArrayList<>();
+
         for (Future<TestResult> future : futures) {
             try {
                 TestResult result = future.get();
+                results.addLast(result);
                 switch (result.status()) {
                     case PASSED -> {
                         success++;
@@ -166,7 +171,7 @@ public class TestRunner {
                     }
                     case FAILED -> {
                         failed++;
-                        log.error("❌ FAILED: {} - Reason: {}", result.getTestName(), result.error().getCause().toString());
+                        log.error("❌ FAILED: {} - Reason: {}", result.getTestName(), result.error());
                         if (!result.testActions().isEmpty()) {
                             result.testActions().forEach(timing -> log.error(timing.toString()));
                         }
@@ -182,6 +187,10 @@ public class TestRunner {
             }
         }
         log.info("--- Summary --- Passed: {}, Failed: {}, Skipped: {}", success, failed, skipped);
+
+        TestRun testRun = new TestRun(results);
+        ReportingService reportingService = new ReportingService();
+        reportingService.process(testRun);
     }
 
     private void scanForTests() {
