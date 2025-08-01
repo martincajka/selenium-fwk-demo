@@ -95,7 +95,7 @@ public class TestRunner {
 
                     try {
                         if (method.isAnnotationPresent(Ignore.class)) {
-                            return new TestResult(method, TestStatus.SKIPPED, System.currentTimeMillis(), System.currentTimeMillis(), null, List.of());
+                            return new TestResult(method, TestStatus.SKIPPED, System.currentTimeMillis(), System.currentTimeMillis(), method.getAnnotation(Ignore.class).value(), List.of());
                         }
                         log.info("🔄 Starting test: {}.{}()",
                                 method.getDeclaringClass().getSimpleName(),
@@ -178,7 +178,7 @@ public class TestRunner {
                     }
                     case SKIPPED -> {
                         skipped++;
-                        log.info("⏭️ SKIPPED: {}", result.getTestName());
+                        log.info("⏭️ SKIPPED: {} - Reason: {}", result.getTestName(), result.error());
                     }
                 }
             } catch (Exception e) {
@@ -204,7 +204,7 @@ public class TestRunner {
             // Find all classes that have a method annotated with @Test
             for (var classInfo : scanResult.getClassesWithMethodAnnotation(Test.class.getName())) {
                 for (Method method : classInfo.loadClass().getDeclaredMethods()) {
-                    if (method.isAnnotationPresent(Test.class)) {
+                    if (isTestMethod(method)) {
                         if (method.isAnnotationPresent(SingleThreaded.class)) {
                             log.debug("✅ Found single-threaded test: {}.{}()",
                                     classInfo.getSimpleName(),
@@ -221,5 +221,26 @@ public class TestRunner {
             }
         }
         log.debug("Scanning for tests finished");
+    }
+
+    private boolean isTestMethod(Method method) {
+        if (!method.isAnnotationPresent(Test.class)) {
+            return false;
+        }
+        if (method.isAnnotationPresent(TestSuite.class)) {
+            List<String> configTestTags = FrameworkConfig.INSTANCE.getConfigAsList("test.suite.tags");
+            if (configTestTags.isEmpty()) {
+                return true;
+            } else {
+                String[] methodTestTags = method.getAnnotation(TestSuite.class).value();
+                for (String tag : methodTestTags) {
+                    if (configTestTags.contains(tag)) {
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+        return true;
     }
 }

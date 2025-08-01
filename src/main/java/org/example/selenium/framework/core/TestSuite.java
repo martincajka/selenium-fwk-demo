@@ -7,6 +7,6 @@ import java.lang.annotation.Target;
 
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
-public @interface Ignore {
-    public String value() default "";
+public @interface TestSuite {
+    String [] value() default {};
 }

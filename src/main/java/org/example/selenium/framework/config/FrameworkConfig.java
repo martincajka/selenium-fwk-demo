@@ -2,10 +2,8 @@ package org.example.selenium.framework.config;
 
 
 import java.io.InputStream;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
+import java.util.stream.Collectors;
 
 public enum FrameworkConfig {
     INSTANCE;
@@ -43,6 +41,7 @@ public enum FrameworkConfig {
         props.put("execution.parallel", DEFAULT_PARALLEL);
         props.put("execution.threadCount", DEFAULT_THREAD_COUNT);
         props.put("logging.level", DEFAULT_LOG_LEVEL);
+        props.put("test.suite.tags", "");
         //    todo: ADD remaining later
     }
 
@@ -87,6 +86,15 @@ public enum FrameworkConfig {
         } catch (NumberFormatException | NullPointerException e) {
             return defaultValue;
         }
+    }
+
+    public List<String> getConfigAsList(String key) {
+        String value = getConfig(key, "");
+        return value.isEmpty() ? Collections.emptyList() :
+                Arrays.stream(value.split(","))
+                        .map(String::strip)
+                        .filter(s -> !s.isEmpty())
+                        .collect(Collectors.toList());
     }
 
 }
